@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Real-Time Face Login System - Python</title>
+<style>
+  body {
+    font-family: Arial, sans-serif;
+    background: linear-gradient(135deg, #667eea, #764ba2);
+    color: white;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-start;
+    min-height: 100vh;
+  }
+  h1 {
+    margin: 20px;
+    user-select: none;
+  }
+  #container {
+    background: rgba(0,0,0,0.5);
+    border-radius: 15px;
+    padding: 20px;
+    width: 360px;
+    margin-bottom: 40px;
+  }
+  label {
+    display: block;
+    margin-top: 10px;
+    font-weight: bold;
+  }
+  input[type='text'] {
+    width: 100%;
+    padding: 8px;
+    border-radius: 6px;
+    border: none;
+    margin-top: 6px;
+    font-size: 16px;
+  }
+  button {
+    width: 100%;
+    margin-top: 15px;
+    padding: 12px 0;
+    font-weight: bold;
+    font-size: 16px;
+    border: none;
+    border-radius: 10px;
+    cursor: pointer;
+    background-color: #845ec2;
+    color: white;
+    transition: background-color 0.3s ease;
+  }
+  button:hover {
+    background-color: #9b5de5;
+  }
+  video {
+    border-radius: 10px;
+    width: 320px;
+    height: 240px;
+    background: black;
+    user-select: none;
+  }
+  #message {
+    margin: 10px 0 0;
+    font-weight: bold;
+  }
+  nav {
+    margin: 20px 0;
+  }
+  nav button {
+    background: #512da8;
+    margin: 0 10px;
+    width: 140px;
+  }
+  nav button.active {
+    background: #ffd600;
+    color: #512da8;
+  }
+  #loginHistoryContainer {
+    background: rgba(0,0,0,0.3);
+    border-radius: 10px;
+    max-height: 200px;
+    overflow-y: auto;
+    padding: 15px;
+    margin-top: 20px;
+  }
+  #loginHistoryContainer h2 {
+    margin-top: 0;
+    font-size: 18px;
+    border-bottom: 1px solid #ddd;
+    padding-bottom: 6px;
+  }
+  ul#loginHistoryList {
+    list-style: none;
+    padding-left: 0;
+    font-size: 14px;
+    user-select: text;
+  }
+  ul#loginHistoryList li {
+    margin-bottom: 8px;
+    border-bottom: 1px dotted #ccc;
+    padding-bottom: 4px;
+  }
+</style>
+</head>
+<body>
+<h1>Real-Time Face Login System</h1>
+<nav>
+  <button id="registerBtn" class="active">Register</button>
+  <button id="loginBtn">Login</button>
+</nav>
+<div id="container">
+  <div id="registerSection">
+    <label for="username">Username:</label>
+    <input type="text" id="username" placeholder="Enter username" autocomplete="off"/>
+    <video id="videoRegister" autoplay muted></video>
+    <button id="captureRegister">Register Face</button>
+    <div id="messageRegister"></div>
+  </div>
+  <div id="loginSection" style="display: none;">
+    <video id="videoLogin" autoplay muted></video>
+    <div id="messageLogin"></div>
+    <div id="loginHistoryContainer">
+      <h2>Login History</h2>
+      <ul id="loginHistoryList">
+        <li>Loading login history...</li>
+      </ul>
+    </div>
+  </div>
+</div>
+<script>
+const videoRegister = document.getElementById('videoRegister');
+const videoLogin = document.getElementById('videoLogin');
+const registerSection = document.getElementById('registerSection');
+const loginSection = document.getElementById('loginSection');
+const captureRegister = document.getElementById('captureRegister');
+const messageRegister = document.getElementById('messageRegister');
+const messageLogin = document.getElementById('messageLogin');
+const usernameInput = document.getElementById('username');
+const registerBtn = document.getElementById('registerBtn');
+const loginBtn = document.getElementById('loginBtn');
+const loginHistoryList = document.getElementById('loginHistoryList');
+
+let loginInterval = null;
+
+function showMessage(element, msg, color='white') {
+  element.innerText = msg;
+  element.style.color = color;
+}
+
+function startVideoStream(videoElement) {
+  if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+    navigator.mediaDevices.getUserMedia({video: true})
+    .then(stream => {
+      videoElement.srcObject = stream;
+    })
+    .catch(err => {
+      alert('Error accessing webcam: ' + err);
+    });
+  } else {
+    alert('getUserMedia not supported in this browser.');
+  }
+}
+
+function captureFrame(videoElement) {
+  const canvas = document.createElement('canvas');
+  canvas.width = videoElement.videoWidth || 320;
+  canvas.height = videoElement.videoHeight || 240;
+  const ctx = canvas.getContext('2d');
+  ctx.drawImage(videoElement, 0, 0, canvas.width, canvas.height);
+  return canvas.toDataURL('image/jpeg');
+}
+
+async function registerUser() {
+  const username = usernameInput.value.trim();
+  if (!username) {
+    showMessage(messageRegister, 'Please enter a username.', '#ff7070');
+    return;
+  }
+  showMessage(messageRegister, 'Capturing face and registering...', '#ffd600');
+  const imgData = captureFrame(videoRegister);
+  try {
+    const resp = await fetch('/register', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({username, image: imgData})
+    });
+    const result = await resp.json();
+    if(result.success){
+      showMessage(messageRegister, 'User "' + username + '" registered successfully!', '#7fff7f');
+      usernameInput.value = '';
+    } else {
+      showMessage(messageRegister, 'Error: ' + result.message, '#ff7070');
+    }
+  } catch (error) {
+    showMessage(messageRegister, 'Error: ' + error.message, '#ff7070');
+  }
+}
+
+async function refreshLoginHistory() {
+  try {
+    const resp = await fetch('/login-history');
+    const data = await resp.json();
+    if(data.success) {
+      const history = data.history;
+      if(history.length === 0) {
+        loginHistoryList.innerHTML = '<li><i>No login history yet</i></li>';
+        return;
+      }
+      loginHistoryList.innerHTML = '';
+      history.slice().reverse().forEach(entry => {
+        const li = document.createElement('li');
+        const timeStr = new Date(entry.timestamp).toLocaleString();
+        li.textContent = timeStr + ' - ' + entry.username;
+        loginHistoryList.appendChild(li);
+      });
+    } else {
+      loginHistoryList.innerHTML = '<li>Error loading history</li>';
+    }
+  } catch (error) {
+    loginHistoryList.innerHTML = '<li>Error fetching login history</li>';
+  }
+}
+
+async function loginUser() {
+  showMessage(messageLogin, 'Detecting face... Please keep your face visible.', '#ffd600');
+  const imgData = captureFrame(videoLogin);
+  try {
+    const resp = await fetch('/login', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({image: imgData})
+    });
+    const result = await resp.json();
+    if(result.success){
+      showMessage(messageLogin, '');
+      showMessage(messageLogin, 'Welcome, ' + result.username + '! Login successful.', '#7fff7f');
+      await refreshLoginHistory();
+    } else {
+      showMessage(messageLogin, 'Face not recognized. Try again.', '#ff7070');
+    }
+  } catch (error) {
+    showMessage(messageLogin, 'Error: ' + error.message, '#ff7070');
+  }
+}
+
+registerBtn.addEventListener('click', () => {
+  registerSection.style.display = 'block';
+  loginSection.style.display = 'none';
+  registerBtn.classList.add('active');
+  loginBtn.classList.remove('active');
+  clearInterval(loginInterval);
+});
+
+loginBtn.addEventListener('click', () => {
+  loginSection.style.display = 'block';
+  registerSection.style.display = 'none';
+  loginBtn.classList.add('active');
+  registerBtn.classList.remove('active');
+
+  if(loginInterval) {
+    clearInterval(loginInterval);
+  }
+  refreshLoginHistory();
+  // Capture and send frames for login every 2 seconds
+  loginInterval = setInterval(loginUser, 2000);
+});
+
+captureRegister.addEventListener('click', registerUser);
+
+startVideoStream(videoRegister);
+startVideoStream(videoLogin);
+
+</script>
+</body>
+</html>
